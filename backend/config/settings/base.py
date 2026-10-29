@@ -95,6 +95,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
 REDIS_URL = env.str("REDIS_URL", default="redis://localhost:6379/0")
 
 REST_FRAMEWORK: dict[str, Any] = {
