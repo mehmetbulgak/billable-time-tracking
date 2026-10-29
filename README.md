@@ -1,5 +1,7 @@
 # Billable
 
+[Open the live demo](https://billable-time-tracking.onrender.com/)
+
 Time tracking and invoicing for agencies. Team members track their hours against client projects, and managers turn each month's time into invoices based on the client's contract.
 
 ![Dashboard](docs/screenshots/dashboard.png)
