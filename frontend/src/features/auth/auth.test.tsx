@@ -10,23 +10,30 @@ import { json, mockFetch, renderWithProviders, route } from "@/test/render";
 import { authApi } from "./authApi";
 import { loggedOut, tokensReceived } from "./authSlice";
 import { LoginPage } from "./LoginPage";
-import { tokenStorage } from "./tokenStorage";
+import { sessionPersistence } from "./sessionPersistence";
 
 describe("auth state", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
 
-  it("persists the refresh token and clears it on logout", () => {
+  it("persists only a session flag and clears legacy tokens", () => {
     const store = makeStore();
 
-    store.dispatch(tokensReceived({ access: "access-1", refresh: "refresh-1" }));
-    expect(store.getState().auth).toEqual({ accessToken: "access-1", refreshToken: "refresh-1" });
-    expect(tokenStorage.read()).toBe("refresh-1");
+    store.dispatch(tokensReceived({ access: "access-1", csrf_token: "csrf" }));
+    expect(store.getState().auth).toEqual({
+      accessToken: "access-1",
+      csrfToken: "csrf",
+      hasSession: true,
+      sessionVersion: 1,
+    });
+    expect(sessionPersistence.read()).toBe(true);
+    expect(window.localStorage.getItem("billable.refreshToken")).toBeNull();
+    expect(window.localStorage.getItem("billable.hasSession")).toBe("1");
 
     store.dispatch(loggedOut());
-    expect(store.getState().auth.refreshToken).toBeNull();
-    expect(tokenStorage.read()).toBeNull();
+    expect(store.getState().auth.hasSession).toBe(false);
+    expect(sessionPersistence.read()).toBe(false);
   });
 });
 
@@ -36,11 +43,11 @@ describe("session restore", () => {
     window.localStorage.clear();
   });
 
-  it("refreshes before the first request when only a refresh token is stored", async () => {
-    tokenStorage.write("stored-refresh");
+  it("restores a session using the HttpOnly cookie", async () => {
+    sessionPersistence.write();
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/refresh/", () =>
-        json({ access: "fresh-access", refresh: "rotated-refresh" }),
+        json({ access: "fresh-access", csrf_token: "csrf" }),
       ),
       route("GET", "/api/v1/auth/me/", (request) =>
         request.headers.get("Authorization") === "Bearer fresh-access"
@@ -55,14 +62,15 @@ describe("session restore", () => {
 
     expect(result.data?.email).toBe(managerUser.email);
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/api/v1/auth/csrf/",
       "/api/v1/auth/token/refresh/",
       "/api/v1/auth/me/",
     ]);
-    expect(tokenStorage.read()).toBe("rotated-refresh");
+    expect(sessionPersistence.read()).toBe(true);
   });
 
-  it("logs out when the stored refresh token is rejected", async () => {
-    tokenStorage.write("expired-refresh");
+  it("logs out when the stored session is rejected", async () => {
+    sessionPersistence.write();
     const { fetchMock } = mockFetch(
       route("POST", "/api/v1/auth/token/refresh/", () =>
         json({ detail: "Token is invalid or expired" }, 401),
@@ -74,19 +82,19 @@ describe("session restore", () => {
 
     await store.dispatch(authApi.endpoints.getCurrentUser.initiate());
 
-    expect(store.getState().auth.refreshToken).toBeNull();
-    expect(tokenStorage.read()).toBeNull();
+    expect(store.getState().auth.hasSession).toBe(false);
+    expect(sessionPersistence.read()).toBe(false);
   });
 
   it("keeps the session after a temporary refresh failure and permits retry", async () => {
-    tokenStorage.write("stored-refresh");
+    sessionPersistence.write();
     let attempts = 0;
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/refresh/", () => {
         attempts += 1;
         return attempts === 1
           ? json({ detail: "Temporarily unavailable" }, 503)
-          : json({ access: "fresh-access", refresh: "rotated-refresh" });
+          : json({ access: "fresh-access", csrf_token: "csrf" });
       }),
       route("GET", "/api/v1/auth/me/", () => json(managerUser)),
     );
@@ -96,22 +104,22 @@ describe("session restore", () => {
     const failed = await store.dispatch(authApi.endpoints.getCurrentUser.initiate());
 
     expect(failed.error).toMatchObject({ status: 503 });
-    expect(tokenStorage.read()).toBe("stored-refresh");
-    expect(calls).toHaveLength(1);
+    expect(sessionPersistence.read()).toBe(true);
+    expect(calls).toHaveLength(2);
 
     const retried = await store.dispatch(
       authApi.endpoints.getCurrentUser.initiate(undefined, { forceRefetch: true }),
     );
 
     expect(retried.data?.email).toBe(managerUser.email);
-    expect(tokenStorage.read()).toBe("rotated-refresh");
+    expect(sessionPersistence.read()).toBe(true);
   });
 
   it("shares one refresh between concurrent requests in the same store", async () => {
-    tokenStorage.write("stored-refresh");
+    sessionPersistence.write();
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/refresh/", () =>
-        json({ access: "fresh-access", refresh: "rotated-refresh" }),
+        json({ access: "fresh-access", csrf_token: "csrf" }),
       ),
       route("GET", "/api/v1/auth/me/", () => json(managerUser)),
       route("GET", "/api/v1/time-entries/active/", () => json([])),
@@ -130,7 +138,7 @@ describe("session restore", () => {
   it("does not share refreshes between independent stores", async () => {
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/refresh/", () =>
-        json({ access: "fresh-access", refresh: "rotated-refresh" }),
+        json({ access: "fresh-access", csrf_token: "csrf" }),
       ),
       route("GET", "/api/v1/auth/me/", (request) =>
         request.headers.get("Authorization") === "Bearer fresh-access"
@@ -139,8 +147,12 @@ describe("session restore", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const first = makeStore({ auth: { accessToken: null, refreshToken: "first" } });
-    const second = makeStore({ auth: { accessToken: null, refreshToken: "second" } });
+    const first = makeStore({
+      auth: { accessToken: null, csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
+    const second = makeStore({
+      auth: { accessToken: null, csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
 
     const responses = await Promise.all([
       first.dispatch(authApi.endpoints.getCurrentUser.initiate()),
@@ -158,18 +170,24 @@ describe("session restore", () => {
     });
     const fetchMock = vi.fn(() => refreshResponse);
     vi.stubGlobal("fetch", fetchMock);
-    const store = makeStore({ auth: { accessToken: null, refreshToken: "stored-refresh" } });
+    const store = makeStore({
+      auth: { accessToken: null, csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
     const request = store.dispatch(authApi.endpoints.getCurrentUser.initiate());
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledOnce();
     });
 
     store.dispatch(loggedOut());
-    completeRefresh(json({ access: "late-access", refresh: "late-refresh" }));
+    completeRefresh(json({ access: "late-access", csrf_token: "csrf" }));
     await request;
 
-    expect(store.getState().auth).toEqual({ accessToken: null, refreshToken: null });
-    expect(tokenStorage.read()).toBeNull();
+    expect(store.getState().auth).toMatchObject({
+      accessToken: null,
+      csrfToken: null,
+      hasSession: false,
+    });
+    expect(sessionPersistence.read()).toBe(false);
   });
 
   it("retries a late unauthorized response with tokens refreshed by another request", async () => {
@@ -183,7 +201,7 @@ describe("session restore", () => {
       const path = new URL(request.url).pathname;
       if (path.endsWith("/token/refresh/")) {
         refreshes += 1;
-        return json({ access: "fresh-access", refresh: "rotated-refresh" });
+        return json({ access: "fresh-access", csrf_token: "csrf" });
       }
       if (request.headers.get("Authorization") === "Bearer expired-access") {
         oldRequests += 1;
@@ -192,7 +210,12 @@ describe("session restore", () => {
       return json(path.endsWith("/active/") ? [] : managerUser);
     });
     const store = makeStore({
-      auth: { accessToken: "expired-access", refreshToken: "stored-refresh" },
+      auth: {
+        accessToken: "expired-access",
+        csrfToken: "csrf",
+        hasSession: true,
+        sessionVersion: 0,
+      },
     });
     const profile = store.dispatch(authApi.endpoints.getCurrentUser.initiate());
     const timers = store.dispatch(timeEntriesApi.endpoints.getActiveTimers.initiate());
@@ -218,7 +241,7 @@ describe("LoginPage", () => {
   it("signs in with the demo manager account", async () => {
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/", () =>
-        json({ access: "access-token", refresh: "refresh-token" }),
+        json({ access: "access-token", csrf_token: "csrf" }),
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -231,7 +254,7 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(store.getState().auth.accessToken).toBe("access-token");
     });
-    expect(await calls[0]?.json()).toEqual({
+    expect(await calls.find((call) => call.method === "POST")?.json()).toEqual({
       email: "can@northwind.test",
       password: "billable-demo",
     });
@@ -266,5 +289,81 @@ describe("LoginPage", () => {
 
     expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument();
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("cookie session security", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it("removes refresh tokens left by an older version", () => {
+    window.localStorage.setItem("billable.refreshToken", "legacy-secret");
+    makeStore();
+    expect(window.localStorage.getItem("billable.refreshToken")).toBeNull();
+  });
+
+  it("requests cookies and a CSRF token without sending a refresh token in JSON", async () => {
+    sessionPersistence.write();
+    const { fetchMock, calls } = mockFetch(
+      route("POST", "/api/v1/auth/token/refresh/", () =>
+        json({ access: "new", csrf_token: "csrf" }),
+      ),
+      route("GET", "/api/v1/auth/me/", () => json(managerUser)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await makeStore().dispatch(authApi.endpoints.getCurrentUser.initiate());
+    const refresh = calls.find((request) => request.url.endsWith("/token/refresh/"));
+    expect(refresh?.credentials).toBe("include");
+    expect(refresh?.headers.get("X-CSRFToken")).toBe("csrf");
+    expect(await refresh?.json()).toEqual({});
+  });
+
+  it("keeps the session when the server cannot confirm logout", async () => {
+    const { fetchMock } = mockFetch(
+      route("POST", "/api/v1/auth/logout/", () => json({ detail: "Unavailable" }, 503)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const store = makeStore({
+      auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
+    await store.dispatch(authApi.endpoints.logout.initiate());
+    expect(store.getState().auth.hasSession).toBe(true);
+  });
+
+  it("clears the browser session after server logout succeeds", async () => {
+    const { fetchMock, calls } = mockFetch(
+      route("POST", "/api/v1/auth/logout/", () => new Response(null, { status: 204 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const store = makeStore({
+      auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
+    await store.dispatch(authApi.endpoints.logout.initiate());
+    expect(calls[0]?.headers.get("X-CSRFToken")).toBe("csrf");
+    expect(store.getState().auth.hasSession).toBe(false);
+  });
+
+  it("renews a stale CSRF token once without dropping the session", async () => {
+    let attempts = 0;
+    const { fetchMock } = mockFetch(
+      route("POST", "/api/v1/auth/token/refresh/", (request) => {
+        attempts += 1;
+        return request.headers.get("X-CSRFToken") === "fresh-csrf"
+          ? json({ access: "new", csrf_token: "fresh-csrf" })
+          : json({ detail: "CSRF failed" }, 403);
+      }),
+      route("GET", "/api/v1/auth/csrf/", () => json({ csrf_token: "fresh-csrf" })),
+      route("GET", "/api/v1/auth/me/", () => json(managerUser)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const store = makeStore({
+      auth: { accessToken: null, csrfToken: "stale", hasSession: true, sessionVersion: 0 },
+    });
+    const response = await store.dispatch(authApi.endpoints.getCurrentUser.initiate());
+    expect(response.isSuccess).toBe(true);
+    expect(attempts).toBe(2);
+    expect(store.getState().auth.hasSession).toBe(true);
   });
 });

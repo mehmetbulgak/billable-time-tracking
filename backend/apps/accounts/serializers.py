@@ -1,4 +1,7 @@
+from typing import Any
+
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from rest_framework import serializers
 
 from apps.accounts.models import Role, User
@@ -33,15 +36,21 @@ class MemberSerializer(serializers.ModelSerializer[User]):
 
 
 class MemberCreateSerializer(serializers.Serializer[User]):
-    email = serializers.EmailField()
+    email = serializers.EmailField(max_length=254)
     first_name = serializers.CharField(max_length=80)
     last_name = serializers.CharField(max_length=80)
     role = serializers.ChoiceField(choices=Role.choices, default=Role.MEMBER)
-    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    password = serializers.CharField(write_only=True, trim_whitespace=False, max_length=1024)
 
-    def validate_password(self, value: str) -> str:
-        validate_password(value)
-        return value
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        user = User(
+            email=attrs["email"], first_name=attrs["first_name"], last_name=attrs["last_name"]
+        )
+        try:
+            validate_password(attrs["password"], user=user)
+        except ValidationError as error:
+            raise serializers.ValidationError({"password": error.messages}) from error
+        return attrs
 
 
 class MemberUpdateSerializer(serializers.Serializer[User]):

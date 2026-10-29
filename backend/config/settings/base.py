@@ -1,5 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import environ
 from celery.schedules import crontab
@@ -14,7 +15,6 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [
-    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "drf_spectacular",
     "corsheaders",
@@ -96,10 +97,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 REDIS_URL = env.str("REDIS_URL", default="redis://localhost:6379/0")
 
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
+REST_FRAMEWORK: dict[str, Any] = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ("apps.accounts.authentication.SessionJWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
         "apps.core.permissions.IsOrganizationMember",
@@ -121,12 +120,30 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MINUTES", default=15)),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_MINUTES", default=5)),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=env.int("JWT_REFRESH_DAYS", default=7)),
     "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "CHECK_REVOKE_TOKEN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
-    "UPDATE_LAST_LOGIN": True,
+    "UPDATE_LAST_LOGIN": False,
 }
+
+REFRESH_COOKIE_NAME = "billable_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth/"
+DEMO_MODE = False
+AUTH_THROTTLING_ENABLED = True
+API_DOCS_ENABLED = False
+DATA_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_FAILURE_VIEW = "apps.core.security.csrf_failure"
+REST_FRAMEWORK["NUM_PROXIES"] = env.int("DJANGO_NUM_PROXIES", default=0)
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"].update(
+    {"login": "10/minute", "login_account": "30/hour", "refresh": "60/minute"},
+)
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Billable API",
@@ -143,6 +160,8 @@ SPECTACULAR_SETTINGS = {
 }
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_CREDENTIALS = bool(CORS_ALLOWED_ORIGINS)
+WEBSOCKET_ALLOWED_ORIGINS: list[str] = []
 
 CHANNEL_LAYERS = {
     "default": {
@@ -158,6 +177,10 @@ CELERY_TIMEZONE = "UTC"
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BEAT_SCHEDULE = {
+    "purge-expired-login-sessions": {
+        "task": "apps.accounts.tasks.purge_expired_sessions",
+        "schedule": crontab(minute=0, hour=3),
+    },
     "generate-monthly-draft-invoices": {
         "task": "apps.billing.tasks.generate_monthly_draft_invoices",
         "schedule": crontab(minute=0, hour="*/1", day_of_month="1"),

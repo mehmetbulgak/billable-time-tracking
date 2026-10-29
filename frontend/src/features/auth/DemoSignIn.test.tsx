@@ -15,7 +15,7 @@ afterEach(() => {
 describe("demo entry", () => {
   it("opens one manager session without a form, including in Strict Mode", async () => {
     const { fetchMock, calls } = mockFetch(
-      route("POST", "/api/v1/auth/token/", () => json({ access: "demo", refresh: "demo-refresh" })),
+      route("POST", "/api/v1/auth/token/", () => json({ access: "demo", csrf_token: "csrf" })),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { store } = renderWithProviders(
@@ -27,8 +27,8 @@ describe("demo entry", () => {
     await waitFor(() => {
       expect(store.getState().auth.accessToken).toBe("demo");
     });
-    expect(calls).toHaveLength(1);
-    expect(await calls[0]?.json()).toEqual({
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    expect(await calls.find((call) => call.method === "POST")?.json()).toEqual({
       email: "can@northwind.test",
       password: "billable-demo",
     });
@@ -40,7 +40,7 @@ describe("demo entry", () => {
       route("POST", "/api/v1/auth/token/", () =>
         ++attempts === 1
           ? json({ detail: "Starting demo. Please try again." }, 503)
-          : json({ access: "demo", refresh: "demo-refresh" }),
+          : json({ access: "demo", csrf_token: "csrf" }),
       ),
     );
     vi.stubGlobal("fetch", fetchMock);

@@ -14,13 +14,14 @@ from apps.accounts.serializers import (
     MemberSerializer,
     MemberUpdateSerializer,
 )
-from apps.core.permissions import IsManagerOrReadOnly, IsOrganizationMember
+from apps.core.permissions import IsManagerOrReadOnly, IsOrganizationMember, ProtectDemoAccounts
 from apps.core.views import OrganizationScopedMixin
 
 
 class CurrentUserView(generics.RetrieveUpdateAPIView[User]):
     serializer_class = CurrentUserSerializer
     http_method_names = ["get", "patch", "head", "options"]
+    permission_classes = (IsOrganizationMember, ProtectDemoAccounts)
 
     def get_object(self) -> User:
         return request_user(self.request)
@@ -34,7 +35,7 @@ class MemberViewSet(
 ):
     queryset = User.objects.all()
     serializer_class = MemberSerializer
-    permission_classes = (IsOrganizationMember, IsManagerOrReadOnly)
+    permission_classes = (IsOrganizationMember, IsManagerOrReadOnly, ProtectDemoAccounts)
     filterset_fields = ("role", "is_active")
     search_fields = ("first_name", "last_name", "email")
     ordering_fields = ("first_name", "last_name", "date_joined")

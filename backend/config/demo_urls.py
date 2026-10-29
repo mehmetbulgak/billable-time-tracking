@@ -4,7 +4,6 @@ from django.conf import settings
 from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import include, path, re_path
-from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from config.urls import api_v1_patterns
 
@@ -27,7 +26,5 @@ def frontend(request: HttpRequest) -> HttpResponse:
 urlpatterns = [
     path("healthz", health),
     path("api/v1/", include(api_v1_patterns)),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     re_path(r"^(?!api/|admin/|assets/).*", frontend),
 ]

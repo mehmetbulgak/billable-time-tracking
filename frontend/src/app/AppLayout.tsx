@@ -25,10 +25,9 @@ import { useTheme } from "@mui/material/styles";
 import { useState, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 
-import { useAppDispatch } from "@/app/hooks";
 import { ConnectionIndicator } from "@/features/activity/ConnectionIndicator";
 import { useActivityStream } from "@/features/activity/useActivityStream";
-import { loggedOut } from "@/features/auth/authSlice";
+import { useLogoutMutation } from "@/features/auth/authApi";
 import { useCurrentUser } from "@/features/auth/useCurrentUser";
 import { TimerBar } from "@/features/timer/TimerBar";
 import { BrandMark } from "@/shared/components/BrandMark";
@@ -52,7 +51,7 @@ const NAV_ITEMS: NavItem[] = [
 
 function Navigation({ onNavigate }: { onNavigate: () => void }) {
   const user = useCurrentUser();
-  const dispatch = useAppDispatch();
+  const [logout, { isLoading: signingOut, isError: signOutFailed }] = useLogoutMutation();
   const navigate = useNavigate();
   const items = NAV_ITEMS.filter((item) => !item.managerOnly || user.is_manager);
 
@@ -86,6 +85,7 @@ function Navigation({ onNavigate }: { onNavigate: () => void }) {
         ))}
       </List>
       <Divider />
+      {signOutFailed ? <Alert severity="error">Sign out failed. Please try again.</Alert> : null}
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", p: 2 }}>
         <Avatar sx={{ width: 36, height: 36, bgcolor: "primary.main", fontSize: 14 }}>
           {user.first_name.charAt(0)}
@@ -102,9 +102,14 @@ function Navigation({ onNavigate }: { onNavigate: () => void }) {
         <Tooltip title="Sign out">
           <IconButton
             aria-label="Sign out"
-            onClick={() => {
-              dispatch(loggedOut());
-              void navigate("/login");
+            disabled={signingOut}
+            onClick={async () => {
+              try {
+                await logout().unwrap();
+                await navigate("/login");
+              } catch {
+                return;
+              }
             }}
           >
             <LogoutOutlined fontSize="small" />

@@ -16,6 +16,9 @@ export const applyActivityEvent =
       userId === currentUserId ? ["CurrentTimer" as const] : [];
 
     switch (event.event) {
+      case "activity.changed":
+        dispatch(baseApi.util.invalidateTags(["ActiveTimers", "Reports"]));
+        return;
       case "timer.started":
       case "timer.stopped": {
         const { entry } = event.payload;

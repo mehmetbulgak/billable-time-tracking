@@ -14,11 +14,11 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
 const PING_INTERVAL_MS = 25_000;
 
-export function activitySocketUrl(token: string, location: Location = window.location): string {
+export function activitySocketUrl(location: Location = window.location): string {
   const origin =
     import.meta.env.VITE_WS_URL ??
     `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
-  return `${origin.replace(/\/$/, "")}/ws/activity/?token=${encodeURIComponent(token)}`;
+  return `${origin.replace(/\/$/, "")}/ws/activity/`;
 }
 
 export function createActivityConnection({
@@ -53,7 +53,7 @@ export function createActivityConnection({
     }
 
     let opened = false;
-    const connection = new WebSocket(activitySocketUrl(token));
+    const connection = new WebSocket(activitySocketUrl(), ["billable.v1", `bearer.${token}`]);
     socket = connection;
     connection.addEventListener("open", () => {
       if (disposed || socket !== connection) {

@@ -1,38 +1,48 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
-import type { TokenPair } from "@/shared/api/types";
+import type { AccessSession } from "@/shared/api/types";
 
-import { tokenStorage } from "./tokenStorage";
+import { sessionPersistence } from "./sessionPersistence";
 
 export interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
+  csrfToken: string | null;
+  hasSession: boolean;
+  sessionVersion: number;
 }
 
 const initialState = (): AuthState => ({
   accessToken: null,
-  refreshToken: tokenStorage.read(),
+  csrfToken: null,
+  hasSession: sessionPersistence.read(),
+  sessionVersion: 0,
 });
 
 export const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
-    tokensReceived(state, action: PayloadAction<TokenPair>) {
+    tokensReceived(state, action: PayloadAction<AccessSession>) {
       state.accessToken = action.payload.access;
-      state.refreshToken = action.payload.refresh;
+      state.csrfToken = action.payload.csrf_token;
+      state.hasSession = true;
+      state.sessionVersion += 1;
+    },
+    csrfReceived(state, action: PayloadAction<string>) {
+      state.csrfToken = action.payload;
     },
     loggedOut(state) {
       state.accessToken = null;
-      state.refreshToken = null;
+      state.csrfToken = null;
+      state.hasSession = false;
+      state.sessionVersion += 1;
     },
   },
   selectors: {
     selectAccessToken: (state) => state.accessToken,
-    selectRefreshToken: (state) => state.refreshToken,
-    selectHasSession: (state) => state.refreshToken !== null,
+    selectHasSession: (state) => state.hasSession,
   },
 });
 
-export const { tokensReceived, loggedOut } = authSlice.actions;
-export const { selectAccessToken, selectRefreshToken, selectHasSession } = authSlice.selectors;
+export const { tokensReceived, csrfReceived, loggedOut } = authSlice.actions;
+export const { selectAccessToken, selectHasSession } = authSlice.selectors;

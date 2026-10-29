@@ -67,12 +67,10 @@ describe("mergeActiveTimer", () => {
 });
 
 describe("activitySocketUrl", () => {
-  it("uses a secure socket on https pages and escapes the token", () => {
+  it("uses a secure socket without a token in the URL", () => {
     const location = { protocol: "https:", host: "app.billable.test" } as Location;
 
-    expect(activitySocketUrl("a b", location)).toBe(
-      "wss://app.billable.test/ws/activity/?token=a%20b",
-    );
+    expect(activitySocketUrl(location)).toBe("wss://app.billable.test/ws/activity/");
   });
 });
 
@@ -92,7 +90,9 @@ describe("activity cache", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const store = makeStore({ auth: { accessToken: "access", refreshToken: "refresh" } });
+    const store = makeStore({
+      auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
     const subscription = store.dispatch(timeEntriesApi.endpoints.getActiveTimers.initiate());
     await subscription;
 

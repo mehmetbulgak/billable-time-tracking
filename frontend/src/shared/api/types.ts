@@ -16,9 +16,9 @@ export interface Paginated<T> {
   results: T[];
 }
 
-export interface TokenPair {
+export interface AccessSession {
   access: string;
-  refresh: string;
+  csrf_token: string;
 }
 
 export interface Organization {

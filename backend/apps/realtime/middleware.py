@@ -1,39 +1,37 @@
 from typing import Any
-from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.middleware import BaseMiddleware
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.tokens import Token
 
+from apps.accounts.authentication import SessionJWTAuthentication
 from apps.accounts.models import User
 
-_authentication = JWTAuthentication()
-
-
-def _token_from_query_string(query_string: bytes) -> str | None:
-    values = parse_qs(query_string.decode()).get("token")
-    return values[0] if values else None
+_authentication = SessionJWTAuthentication()
 
 
 @database_sync_to_async
-def _user_for_token(token: str | None) -> User | AnonymousUser:
-    if not token:
-        return AnonymousUser()
+def authenticate_protocols(protocols: list[str]) -> tuple[User | AnonymousUser, Token | None]:
+    tokens = [
+        protocol.removeprefix("bearer.") for protocol in protocols if protocol.startswith("bearer.")
+    ]
+    if "billable.v1" not in protocols or len(tokens) != 1 or len(tokens[0]) > 8192:
+        return AnonymousUser(), None
     try:
-        validated_token = _authentication.get_validated_token(token.encode())
-        user = _authentication.get_user(validated_token)
+        token = _authentication.get_validated_token(tokens[0].encode())
+        user = _authentication.get_user(token)
     except (InvalidToken, AuthenticationFailed):
-        return AnonymousUser()
-    if isinstance(user, User) and user.is_active:
-        return user
-    return AnonymousUser()
+        return AnonymousUser(), None
+    if not isinstance(user, User):
+        return AnonymousUser(), None
+    return user, token
 
 
-class JWTQueryStringAuthMiddleware(BaseMiddleware):
+class JWTSubprotocolAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> Any:
-        token = _token_from_query_string(scope.get("query_string", b""))
-        scope = {**scope, "user": await _user_for_token(token)}
+        user, token = await authenticate_protocols(scope.get("subprotocols", []))
+        scope = {**scope, "user": user, "auth_token": token}
         return await super().__call__(scope, receive, send)

@@ -46,8 +46,8 @@ jobs:
       DATABASE_URL: postgres://billable:billable@localhost:5432/billable
       REDIS_URL: redis://localhost:6379/0
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.13"
           cache: pip
@@ -74,8 +74,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
           cache: npm
@@ -96,6 +96,39 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend, frontend]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - name: Build images
-        run: docker compose build
+        run: |
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          export POSTGRES_ADMIN_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          export REDIS_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          docker compose build
+
+  security:
+    name: Security audits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit -r backend/requirements/dev.txt
+      - name: Audit JavaScript dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=low
+      - name: Scan Git history for secrets
+        run: |
+          curl --fail --silent --show-error --location https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          printf '%s  %s\n' '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --log-opts=--all --redact --no-banner

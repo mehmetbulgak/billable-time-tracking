@@ -1,4 +1,5 @@
-from django.db import transaction
+from django.conf import settings
+from django.db import IntegrityError, transaction
 
 from apps.accounts.models import Role, User
 from apps.core.exceptions import ConflictError, ForbiddenError, NotFoundError
@@ -10,7 +11,7 @@ def _lock_actor(*, organization_id: int, actor: User) -> User:
     actor = User.objects.get(pk=actor.pk)
     if actor.organization_id != organization_id:
         raise NotFoundError("Organization not found.")
-    if not actor.is_manager:
+    if not actor.is_active or not actor.is_manager:
         raise ForbiddenError("Only owners and managers can manage members.")
     return actor
 
@@ -44,18 +45,26 @@ def create_member(
     role: str,
     password: str,
 ) -> User:
+    if settings.DEMO_MODE:
+        raise ForbiddenError("Account management is disabled in the public demo.")
     actor = _lock_actor(organization_id=organization.pk, actor=actor)
     _ensure_can_assign_role(actor=actor, role=role)
     if User.objects.filter(email__iexact=email).exists():
         raise ConflictError("A user with this email already exists.", code="email_taken")
-    return User.objects.create_user(
-        email=email,
-        password=password,
-        first_name=first_name,
-        last_name=last_name,
-        organization=organization,
-        role=role,
-    )
+    try:
+        with transaction.atomic():
+            return User.objects.create_user(
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                organization=organization,
+                role=role,
+            )
+    except IntegrityError as error:
+        if not User.objects.filter(email__iexact=email).exists():
+            raise
+        raise ConflictError("A user with this email already exists.", code="email_taken") from error
 
 
 @transaction.atomic
@@ -68,6 +77,8 @@ def update_member(
     role: str | None = None,
     is_active: bool | None = None,
 ) -> User:
+    if settings.DEMO_MODE:
+        raise ForbiddenError("Account management is disabled in the public demo.")
     if member.organization_id is None or member.organization_id != actor.organization_id:
         raise NotFoundError("Member not found.")
     actor = _lock_actor(organization_id=member.organization_id, actor=actor)

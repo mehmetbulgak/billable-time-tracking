@@ -3,6 +3,7 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.accounts.models import Role
 from apps.demo.catalog import DEMO_PASSWORD, MEMBERS
 from apps.demo.seeding import ORGANIZATION_SLUG, DemoSeeder
 from apps.organizations.models import Organization
@@ -33,7 +34,9 @@ class Command(BaseCommand):
         )
         for line in report.invoices:
             self.stdout.write(f"  {line}")
-        self.stdout.write("\nSign in with any of these accounts:")
+        self.stdout.write("\nPublic demo accounts:")
         for member in MEMBERS:
+            if member.role == Role.OWNER:
+                continue
             self.stdout.write(f"  {member.email} ({member.role.label})")
         self.stdout.write(f"Password: {DEMO_PASSWORD}")

@@ -2,6 +2,8 @@ import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
+from django.conf import settings
+from django.core.management import CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -46,6 +48,10 @@ class DemoSeeder:
         self._report = SeedReport()
 
     def run(self, *, reset: bool) -> SeedReport:
+        if not settings.DEMO_MODE and not settings.DEBUG:
+            raise CommandError(
+                "Demo data can only be created in explicit demo or development mode."
+            )
         if reset:
             self.reset()
         with transaction.atomic():
@@ -88,13 +94,13 @@ class DemoSeeder:
             is_owner = spec.role == Role.OWNER
             members[spec.email] = User.objects.create_user(
                 email=spec.email,
-                password=DEMO_PASSWORD,
+                password=None if is_owner else DEMO_PASSWORD,
                 first_name=spec.first_name,
                 last_name=spec.last_name,
                 organization=organization,
                 role=spec.role,
-                is_staff=is_owner,
-                is_superuser=is_owner,
+                is_staff=False,
+                is_superuser=False,
             )
         self._report.members = len(members)
         return members

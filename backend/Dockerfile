@@ -23,10 +23,10 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     DJANGO_SETTINGS_MODULE=config.settings.prod
 
-COPY --chown=app:app . .
-RUN DJANGO_SECRET_KEY=collectstatic-build-only python manage.py collectstatic --noinput
+COPY . .
+RUN DJANGO_SETTINGS_MODULE=config.settings.build python manage.py collectstatic --noinput
 
 USER app
 EXPOSE 8000
 
-CMD ["daphne", "--bind", "0.0.0.0", "--port", "8000", "--proxy-headers", "config.asgi:application"]
+CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers", "--ws-max-size", "4096", "--ws-max-queue", "4", "--ws-per-message-deflate", "false"]

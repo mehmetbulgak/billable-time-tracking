@@ -8,7 +8,10 @@ class TestSocket extends EventTarget {
   readyState = 0;
   send = vi.fn<(message: string) => void>();
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly protocols: string[],
+  ) {
     super();
     TestSocket.instances.push(this);
   }
@@ -71,7 +74,8 @@ describe("activity connection", () => {
     latestSocket().close();
     token = "refreshed";
     vi.advanceTimersByTime(1000);
-    expect(latestSocket().url).toContain("token=refreshed");
+    expect(latestSocket().protocols).toEqual(["billable.v1", "bearer.refreshed"]);
+    expect(latestSocket().url).not.toContain("refreshed");
     latestSocket().open();
 
     expect(callbacks.onReconnect).toHaveBeenCalledOnce();
@@ -142,6 +146,6 @@ describe("activity connection", () => {
     token = "ready";
     vi.advanceTimersByTime(1000);
 
-    expect(latestSocket().url).toContain("token=ready");
+    expect(latestSocket().protocols).toContain("bearer.ready");
   });
 });

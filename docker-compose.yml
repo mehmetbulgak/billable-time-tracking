@@ -5,12 +5,13 @@ x-backend: &backend
   image: billable-backend
   restart: unless-stopped
   environment:
-    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-docker-secret-key-replace-before-deploying}
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set a strong DJANGO_SECRET_KEY in .env}
     DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
     DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
     DJANGO_HTTPS_ONLY: "false"
-    DATABASE_URL: postgres://billable:billable@db:5432/billable
-    REDIS_URL: redis://redis:6379/0
+    DJANGO_NUM_PROXIES: "1"
+    DATABASE_URL: postgres://billable:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/billable
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
     EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
 
 x-backend-dependencies: &backend-dependencies
@@ -24,13 +25,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: billable
-      POSTGRES_PASSWORD: billable
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: billable
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./deploy/init-database.sh:/docker-entrypoint-initdb.d/init-database.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U billable -d billable"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d billable"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -38,8 +41,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping"]
       interval: 5s
       timeout: 3s
       retries: 10

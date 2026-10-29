@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from django.db.models import ProtectedError, QuerySet
 from django.http import HttpResponse
+from django.utils.http import content_disposition_header
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
@@ -152,5 +153,7 @@ class InvoiceViewSet(
         return HttpResponse(
             invoice_csv(invoice, entries),
             content_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": content_disposition_header(True, filename) or "attachment"
+            },
         )

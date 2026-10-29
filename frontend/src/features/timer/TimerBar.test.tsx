@@ -7,7 +7,9 @@ import { json, mockFetch, renderWithProviders, route } from "@/test/render";
 
 import { TimerBar } from "./TimerBar";
 
-const authenticated = { auth: { accessToken: "access", refreshToken: "refresh" } };
+const authenticated = {
+  auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+};
 
 describe("TimerBar", () => {
   afterEach(() => {

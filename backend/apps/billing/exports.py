@@ -7,18 +7,26 @@ from apps.core.money import minutes_to_hours
 from apps.timetracking.models import TimeEntry
 
 
+def _safe_cell(value: object) -> object:
+    if isinstance(value, str):
+        probe = value.lstrip("".join(chr(code) for code in range(33)) + "\ufeff")
+        if probe.startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")):
+            return f"'{value}"
+    return value
+
+
 def _write_section(writer: csv.DictWriter[str], rows: Iterable[dict[str, object]]) -> None:
     writer.writeheader()
-    writer.writerows(rows)
+    writer.writerows({key: _safe_cell(value) for key, value in row.items()} for row in rows)
 
 
 def invoice_csv(invoice: Invoice, entries: Iterable[TimeEntry]) -> str:
     buffer = io.StringIO()
     summary = csv.writer(buffer)
-    summary.writerow(["Invoice", invoice.number or "DRAFT"])
-    summary.writerow(["Client", invoice.client.name])
+    summary.writerow(["Invoice", _safe_cell(invoice.number or "DRAFT")])
+    summary.writerow(["Client", _safe_cell(invoice.client.name)])
     summary.writerow(["Period", f"{invoice.period_start:%Y-%m-%d} - {invoice.period_end:%Y-%m-%d}"])
-    summary.writerow(["Currency", invoice.currency])
+    summary.writerow(["Currency", _safe_cell(invoice.currency)])
     summary.writerow([])
 
     _write_section(

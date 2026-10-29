@@ -31,10 +31,13 @@ def test_obtain_tokens_and_read_profile(api_client: APIClient, member: User) -> 
 def test_refresh_token_rotation(api_client: APIClient, member: User) -> None:
     tokens = api_client.post("/api/v1/auth/token/", {"email": member.email, "password": PASSWORD})
 
-    refreshed = api_client.post("/api/v1/auth/token/refresh/", {"refresh": tokens.data["refresh"]})
+    original = api_client.cookies["billable_refresh"].value
+    refreshed = api_client.post("/api/v1/auth/token/refresh/")
 
     assert refreshed.status_code == status.HTTP_200_OK
-    assert {"access", "refresh"} <= refreshed.data.keys()
+    assert {"access", "csrf_token"} == refreshed.data.keys()
+    assert api_client.cookies["billable_refresh"].value != original
+    assert "refresh" not in tokens.data
 
 
 def test_wrong_password_is_rejected(api_client: APIClient, member: User) -> None:
@@ -160,7 +163,7 @@ class TestMembers:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_the_last_owner_cannot_be_removed(
+    def test_deactivated_owners_cannot_change_members(
         self,
         client_for: ClientFor,
         owner: User,
@@ -175,4 +178,4 @@ class TestMembers:
             {"role": Role.MEMBER},
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_403_FORBIDDEN

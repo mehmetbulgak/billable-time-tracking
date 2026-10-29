@@ -1,22 +1,22 @@
 import { createListenerMiddleware } from "@reduxjs/toolkit";
 
 import { loggedOut, tokensReceived } from "@/features/auth/authSlice";
-import { tokenStorage } from "@/features/auth/tokenStorage";
+import { sessionPersistence } from "@/features/auth/sessionPersistence";
 import { baseApi } from "@/shared/api/baseApi";
 
 export const listenerMiddleware = createListenerMiddleware();
 
 listenerMiddleware.startListening({
   actionCreator: tokensReceived,
-  effect: (action) => {
-    tokenStorage.write(action.payload.refresh);
+  effect: () => {
+    sessionPersistence.write();
   },
 });
 
 listenerMiddleware.startListening({
   actionCreator: loggedOut,
   effect: (_action, api) => {
-    tokenStorage.clear();
+    sessionPersistence.clear();
     api.dispatch(baseApi.util.resetApiState());
   },
 });

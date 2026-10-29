@@ -46,6 +46,9 @@ export function mockFetch(...routes: Route[]) {
         return Promise.resolve(response);
       }
     }
+    if (request.method === "GET" && new URL(request.url).pathname === "/api/v1/auth/csrf/") {
+      return json({ csrf_token: "csrf" });
+    }
     return Promise.resolve(new Response(JSON.stringify({ detail: "Not found" }), { status: 404 }));
   };
   return { fetchMock, calls };

@@ -9,7 +9,9 @@ import { currentPeriod, periodLabel } from "@/shared/lib/period";
 
 import { GenerateInvoiceDialog } from "./GenerateInvoiceDialog";
 
-const authenticated = { auth: { accessToken: "access", refreshToken: "refresh" } };
+const authenticated = {
+  auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+};
 
 async function openWithPreview(preview: BillingPreview) {
   const { fetchMock, calls } = mockFetch(
