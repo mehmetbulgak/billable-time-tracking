@@ -45,6 +45,7 @@ export const activityEventSchema = z.discriminatedUnion("event", [
     event: z.literal("invoice.changed"),
     payload: z.object({ invoice_id: z.number(), status: z.string() }),
   }),
+  z.object({ event: z.literal("session.revoked"), payload: z.object({}) }),
   z.object({ event: z.literal("pong"), payload: z.object({}) }),
   z.object({ event: z.literal("activity.changed"), payload: z.object({}) }),
 ]);

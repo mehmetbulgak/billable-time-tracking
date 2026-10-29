@@ -40,6 +40,10 @@ class OrganizationActivityConsumer(AsyncJsonWebsocketConsumer):
         await asyncio.sleep(max(0, expiry - time.time()))
         await self.close(code=4401)
 
+    async def deny_session(self) -> None:
+        await self.send_json({"event": "session.revoked", "payload": {}})
+        await self.close(code=4401)
+
     async def disconnect(self, code: int) -> None:
         if self.expiry_task is not None:
             self.expiry_task.cancel()
@@ -57,7 +61,7 @@ class OrganizationActivityConsumer(AsyncJsonWebsocketConsumer):
         try:
             user = await database_sync_to_async(SessionJWTAuthentication().get_user)(token)
         except AuthenticationFailed:
-            await self.close(code=4401)
+            await self.deny_session()
             return None
         if (
             not isinstance(user, User)
@@ -92,7 +96,7 @@ class OrganizationActivityConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({"event": "pong", "payload": {}})
 
     async def session_revoked(self, message: dict[str, Any]) -> None:
-        await self.close(code=4401)
+        await self.deny_session()
 
     async def organization_event(self, message: dict[str, Any]) -> None:
         user = await self.authorized_user()

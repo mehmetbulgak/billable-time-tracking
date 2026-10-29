@@ -1,5 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Route, Routes } from "react-router";
+import { RequireAuth } from "./RequireAuth";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -52,4 +54,24 @@ describe("demo entry", () => {
     });
     expect(attempts).toBe(2);
   });
+});
+
+it("does not sign a visitor back in after the session is revoked", async () => {
+  vi.stubEnv("VITE_DEMO_MODE", "true");
+  const { fetchMock, calls } = mockFetch();
+  vi.stubGlobal("fetch", fetchMock);
+  renderWithProviders(
+    <Routes>
+      <Route path="/" element={<RequireAuth />} />
+      <Route path="/login" element={<div>Signed out</div>} />
+    </Routes>,
+    {
+      preloadedState: {
+        auth: { accessToken: null, csrfToken: null, hasSession: false, sessionVersion: 1 },
+      },
+    },
+  );
+  expect(await screen.findByText("Signed out")).toBeInTheDocument();
+  expect(calls).toHaveLength(0);
+  vi.unstubAllEnvs();
 });

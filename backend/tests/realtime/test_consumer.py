@@ -145,6 +145,7 @@ async def test_deactivated_users_lose_their_connection(
 ) -> None:
     await sync_to_async(User.objects.filter(pk=member.pk).update)(is_active=False)
     await connected.send_json_to({"type": "ping"})
+    assert await connected.receive_json_from() == {"event": "session.revoked", "payload": {}}
     assert await connected.receive_output() == {"type": "websocket.close", "code": 4401}
 
 
@@ -177,5 +178,6 @@ async def test_logout_closes_an_idle_connection(member: User) -> None:
     accepted, _ = await socket.connect()
     assert accepted
     await sync_to_async(revoke_session)(str(refresh))
+    assert await socket.receive_json_from() == {"event": "session.revoked", "payload": {}}
     assert await socket.receive_output() == {"type": "websocket.close", "code": 4401}
     await socket.disconnect()

@@ -10,13 +10,14 @@ import { DemoSignIn } from "./DemoSignIn";
 
 export function RequireAuth() {
   const hasSession = useAppSelector(selectHasSession);
+  const sessionVersion = useAppSelector((state) => state.auth.sessionVersion);
   const location = useLocation();
   const { data, error, isLoading, refetch } = useGetCurrentUserQuery(undefined, {
     skip: !hasSession,
   });
 
   if (!hasSession) {
-    if (import.meta.env.VITE_DEMO_MODE === "true") {
+    if (import.meta.env.VITE_DEMO_MODE === "true" && sessionVersion === 0) {
       return <DemoSignIn />;
     }
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;

@@ -105,3 +105,14 @@ describe("activity cache", () => {
     subscription.unsubscribe();
   });
 });
+
+describe("session revocation", () => {
+  it("clears the session before the transport closes", () => {
+    const store = makeStore({
+      auth: { accessToken: "access", csrfToken: "csrf", hasSession: true, sessionVersion: 0 },
+    });
+    store.dispatch(applyActivityEvent({ event: "session.revoked", payload: {} }));
+    expect(store.getState().auth.hasSession).toBe(false);
+    expect(store.getState().auth.accessToken).toBeNull();
+  });
+});

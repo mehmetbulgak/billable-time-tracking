@@ -1,4 +1,5 @@
 import type { AppThunk } from "@/app/store";
+import { loggedOut } from "@/features/auth/authSlice";
 import { authApi } from "@/features/auth/authApi";
 import { timeEntriesApi } from "@/features/timeEntries/timeEntriesApi";
 import { baseApi } from "@/shared/api/baseApi";
@@ -16,6 +17,9 @@ export const applyActivityEvent =
       userId === currentUserId ? ["CurrentTimer" as const] : [];
 
     switch (event.event) {
+      case "session.revoked":
+        dispatch(loggedOut());
+        return;
       case "activity.changed":
         dispatch(baseApi.util.invalidateTags(["ActiveTimers", "Reports"]));
         return;
