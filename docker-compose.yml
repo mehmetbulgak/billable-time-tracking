@@ -1,0 +1,87 @@
+name: billable
+
+x-backend: &backend
+  build: ./backend
+  image: billable-backend
+  restart: unless-stopped
+  environment:
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-docker-secret-key-replace-before-deploying}
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+    DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+    DJANGO_HTTPS_ONLY: "false"
+    DATABASE_URL: postgres://billable:billable@db:5432/billable
+    REDIS_URL: redis://redis:6379/0
+    EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+
+x-backend-dependencies: &backend-dependencies
+  db:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: billable
+      POSTGRES_PASSWORD: billable
+      POSTGRES_DB: billable
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billable -d billable"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    depends_on: *backend-dependencies
+
+  api:
+    <<: *backend
+    depends_on:
+      <<: *backend-dependencies
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["celery", "--app", "config", "worker", "--loglevel", "info"]
+    depends_on:
+      <<: *backend-dependencies
+      migrate:
+        condition: service_completed_successfully
+
+  beat:
+    <<: *backend
+    command:
+      ["celery", "--app", "config", "beat", "--loglevel", "info", "--schedule", "/tmp/celerybeat-schedule"]
+    depends_on:
+      <<: *backend-dependencies
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    image: billable-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:

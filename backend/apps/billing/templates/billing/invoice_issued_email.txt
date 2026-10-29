@@ -1,0 +1,16 @@
+Hello {{ client.contact_name|default:client.name }},
+
+Please find the details of invoice {{ invoice.number }} from {{ organization.name }} below.
+
+Period: {{ invoice.period_start|date:"F Y" }}
+Issue date: {{ invoice.issue_date|date:"j F Y" }}
+Due date: {{ invoice.due_date|date:"j F Y" }}
+
+{% for line in lines %}- {{ line.description }}: {{ line.quantity }} x {{ line.unit_price }} = {{ line.amount }} {{ invoice.currency }}
+{% endfor %}
+Subtotal: {{ invoice.subtotal }} {{ invoice.currency }}
+Tax ({{ invoice.tax_rate }}%): {{ invoice.tax_amount }} {{ invoice.currency }}
+Total due: {{ invoice.total }} {{ invoice.currency }}
+
+Thank you for working with us.
+{{ organization.name }}
