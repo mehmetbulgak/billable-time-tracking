@@ -6,6 +6,7 @@ import { FullPageLoader } from "@/shared/components/FullPageLoader";
 
 import { useGetCurrentUserQuery } from "./authApi";
 import { selectHasSession } from "./authSlice";
+import { DemoSignIn } from "./DemoSignIn";
 
 export function RequireAuth() {
   const hasSession = useAppSelector(selectHasSession);
@@ -15,6 +16,9 @@ export function RequireAuth() {
   });
 
   if (!hasSession) {
+    if (import.meta.env.VITE_DEMO_MODE === "true") {
+      return <DemoSignIn />;
+    }
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   if (isLoading) {

@@ -6,6 +6,7 @@ import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import AppBar from "@mui/material/AppBar";
+import Alert from "@mui/material/Alert";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
@@ -22,7 +23,7 @@ import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import { useState, type ReactNode } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useNavigate } from "react-router";
 
 import { useAppDispatch } from "@/app/hooks";
 import { ConnectionIndicator } from "@/features/activity/ConnectionIndicator";
@@ -52,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
 function Navigation({ onNavigate }: { onNavigate: () => void }) {
   const user = useCurrentUser();
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const items = NAV_ITEMS.filter((item) => !item.managerOnly || user.is_manager);
 
   return (
@@ -98,7 +100,13 @@ function Navigation({ onNavigate }: { onNavigate: () => void }) {
           </Typography>
         </Stack>
         <Tooltip title="Sign out">
-          <IconButton aria-label="Sign out" onClick={() => dispatch(loggedOut())}>
+          <IconButton
+            aria-label="Sign out"
+            onClick={() => {
+              dispatch(loggedOut());
+              void navigate("/login");
+            }}
+          >
             <LogoutOutlined fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -149,6 +157,11 @@ export function AppLayout() {
             <ConnectionIndicator status={connection} />
           </Toolbar>
         </AppBar>
+        {import.meta.env.VITE_DEMO_MODE === "true" ? (
+          <Alert severity="info" sx={{ borderRadius: 0 }}>
+            Interactive demo · Shared sample data resets when the server restarts.
+          </Alert>
+        ) : null}
         <Box
           component="main"
           sx={{ flexGrow: 1, p: { xs: 2, md: 4 }, maxWidth: 1440, width: "100%" }}

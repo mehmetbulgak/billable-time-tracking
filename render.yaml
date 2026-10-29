@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: billable-time-tracking-demo
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: codex/render-demo
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true

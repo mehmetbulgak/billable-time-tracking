@@ -4,6 +4,21 @@ Time tracking and invoicing for agencies. Team members track their hours against
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
+## Public portfolio demo
+
+The Render demo opens directly as the demo manager, with sample clients, contracts,
+timesheets and invoices. Sign out to try the team-member account from the login page.
+
+The deployment in `deploy/Dockerfile` runs the original Django API and PostgreSQL
+alongside the built React app on one free Render web service. It uses a single
+Daphne process with an in-memory Channels layer and eager Celery tasks; emails are
+discarded. The normal production settings and Docker Compose stack remain available.
+
+This is a disposable, shared demo: all sample data is recreated on startup and
+changes are lost on service restarts. Do not enter real client or personal data.
+Render's free service sleeps after inactivity, so the first visit can take about
+a minute to start. See `render.yaml` for repeatable free-plan configuration.
+
 ## Features
 
 - Start/stop timer and a weekly timesheet
