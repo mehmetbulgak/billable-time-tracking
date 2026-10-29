@@ -44,9 +44,14 @@ class ProjectSerializer(serializers.ModelSerializer[Project]):
         name: str = attrs.get("name", getattr(self.instance, "name", ""))
         if not isinstance(client, Client):
             raise serializers.ValidationError({"client": "This field is required."})
-        if self.instance is None and client.is_archived:
+        changes_client = self.instance is not None and self.instance.client_id != client.pk
+        if (self.instance is None or changes_client) and client.is_archived:
             raise serializers.ValidationError(
                 {"client": "Archived clients cannot get new projects."}
+            )
+        if changes_client and self.instance is not None and self.instance.time_entries.exists():
+            raise serializers.ValidationError(
+                {"client": "Projects with tracked time cannot be moved to another client."}
             )
         duplicates = Project.objects.filter(client=client, name__iexact=name)
         if self.instance is not None:

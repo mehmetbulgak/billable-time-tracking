@@ -33,6 +33,7 @@ export const applyActivityEvent =
         dispatch(
           baseApi.util.invalidateTags([
             TIME_ENTRY_LIST,
+            "ActiveTimers",
             "Reports",
             ...ownTimerTags(event.payload.entry.user.id),
           ]),

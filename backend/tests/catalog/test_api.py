@@ -207,3 +207,43 @@ class TestProjects:
         response = client_for(member).get("/api/v1/projects/", {"client": client.pk})
 
         assert [project["id"] for project in response.data["results"]] == [wanted.pk]
+
+    def test_tracked_projects_cannot_move_to_another_client(
+        self, client_for: ClientFor, manager: User, client: Client
+    ) -> None:
+        project = ProjectFactory(client=client)
+        TimeEntryFactory(project=project, user=manager)
+        destination = ClientFactory(organization=client.organization)
+
+        response = client_for(manager).patch(
+            f"/api/v1/projects/{project.pk}/", {"client": destination.pk}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        project.refresh_from_db()
+        assert project.client_id == client.pk
+
+    def test_unused_projects_can_move_to_another_client(
+        self, client_for: ClientFor, manager: User, client: Client
+    ) -> None:
+        project = ProjectFactory(client=client)
+        destination = ClientFactory(organization=client.organization)
+
+        response = client_for(manager).patch(
+            f"/api/v1/projects/{project.pk}/", {"client": destination.pk}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["client"] == destination.pk
+
+    def test_unused_projects_cannot_move_to_archived_clients(
+        self, client_for: ClientFor, manager: User, client: Client
+    ) -> None:
+        project = ProjectFactory(client=client)
+        destination = ClientFactory(organization=client.organization, is_archived=True)
+
+        response = client_for(manager).patch(
+            f"/api/v1/projects/{project.pk}/", {"client": destination.pk}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

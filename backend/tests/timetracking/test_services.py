@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import pytest
@@ -252,6 +253,47 @@ class TestEditing:
         )
 
         assert not updated.is_running
+
+    @pytest.mark.parametrize("operation", [services.update_entry, services.delete_entry])
+    def test_stale_entries_cannot_bypass_invoice_lock(
+        self, member: User, project: Project, operation: Callable[..., object]
+    ) -> None:
+        entry = TimeEntryFactory(user=member, project=project)
+        invoice = InvoiceFactory(client=project.client)
+        TimeEntry.objects.filter(pk=entry.pk).update(invoice=invoice)
+
+        with pytest.raises(ConflictError, match="can no longer be changed"):
+            operation(entry=entry, actor=member)
+
+        entry.refresh_from_db()
+        assert entry.invoice_id == invoice.pk
+
+    def test_partial_updates_preserve_changes_made_after_loading(
+        self, member: User, project: Project
+    ) -> None:
+        entry = TimeEntryFactory(user=member, project=project)
+        TimeEntry.objects.filter(pk=entry.pk).update(is_billable=False)
+
+        updated = services.update_entry(entry=entry, actor=member, description="Revised", now=NOW)
+
+        assert updated.is_billable is False
+        assert updated.description == "Revised"
+
+    def test_managers_cannot_edit_another_organizations_entry(self, manager: User) -> None:
+        entry = TimeEntryFactory()
+
+        with pytest.raises(NotFoundError):
+            services.update_entry(entry=entry, actor=manager, description="Changed", now=NOW)
+
+    @pytest.mark.parametrize("operation", [services.update_entry, services.delete_entry])
+    def test_entries_deleted_since_loading_return_not_found(
+        self, member: User, project: Project, operation: Callable[..., object]
+    ) -> None:
+        entry = TimeEntryFactory(user=member, project=project)
+        TimeEntry.objects.filter(pk=entry.pk).delete()
+
+        with pytest.raises(NotFoundError):
+            operation(entry=entry, actor=member)
 
     def test_delete_entry(self, member: User, project: Project) -> None:
         entry = TimeEntryFactory(user=member, project=project)

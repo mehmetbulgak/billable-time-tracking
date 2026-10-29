@@ -1,19 +1,16 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
 from apps.billing import selectors
-from apps.billing.domain.strategies import strategy_for
-from apps.billing.domain.types import BillingModel, BillingResult, InvalidTermsError
 from apps.billing.models import Contract, Invoice, InvoiceLine, InvoiceStatus
+from apps.billing.services.calculations import InvoiceCalculation, InvoicePreview, calculate_invoice
 from apps.billing.signals import invoice_issued
 from apps.clients.models import Client
-from apps.core.db import violated_constraint
 from apps.core.exceptions import ConflictError, DomainError
 from apps.core.money import quantize_money
 from apps.core.periods import MonthPeriod
@@ -23,112 +20,12 @@ from apps.realtime.publisher import publish_on_commit
 from apps.timetracking.models import TimeEntry
 
 HUNDRED = Decimal("100")
-CONTRACT_OVERLAP_CONSTRAINT = "contracts_no_overlap_per_client"
-IMMUTABLE_CONTRACT_FIELDS = frozenset(
-    {
-        "client",
-        "billing_model",
-        "starts_on",
-        "hourly_rate",
-        "monthly_fee",
-        "included_hours",
-        "overage_rate",
-        "rollover_cap_hours",
-        "rounding_increment_minutes",
-    },
-)
-
-
-@dataclass(frozen=True, slots=True)
-class InvoiceCalculation:
-    contract: Contract
-    result: BillingResult
-    entry_ids: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class InvoicePreview:
-    result: BillingResult
-    replaces_draft_id: int | None
 
 
 @dataclass(slots=True)
 class DraftGenerationSummary:
     created: list[int] = field(default_factory=list)
     skipped: list[tuple[int, str]] = field(default_factory=list)
-
-
-def _save_contract(contract: Contract) -> Contract:
-    try:
-        contract.to_terms()
-    except InvalidTermsError as error:
-        raise DomainError(str(error), code="invalid_terms") from error
-    contract.full_clean(validate_constraints=False)
-    try:
-        with transaction.atomic():
-            contract.save()
-    except IntegrityError as error:
-        if violated_constraint(error) != CONTRACT_OVERLAP_CONSTRAINT:
-            raise
-        raise ConflictError(
-            "This contract overlaps another contract of the same client.",
-            code="overlapping_contract",
-        ) from error
-    return contract
-
-
-def create_contract(*, organization: Organization, **fields: Any) -> Contract:
-    client: Client = fields["client"]
-    if client.organization_id != organization.pk:
-        raise DomainError("Unknown client.", code="unknown_client")
-    return _save_contract(Contract(organization=organization, **fields))
-
-
-def update_contract(*, contract: Contract, **fields: Any) -> Contract:
-    has_issued_invoices = contract.invoices.exclude(status=InvoiceStatus.DRAFT).exists()
-    changed = {name for name, value in fields.items() if getattr(contract, name) != value}
-    if has_issued_invoices and changed & IMMUTABLE_CONTRACT_FIELDS:
-        raise ConflictError(
-            "Contracts with issued invoices can only change their end date.",
-            code="contract_locked",
-        )
-    for name, value in fields.items():
-        setattr(contract, name, value)
-    return _save_contract(contract)
-
-
-def _rollover_minutes_for(contract: Contract, period: MonthPeriod) -> int:
-    if contract.billing_model != BillingModel.RETAINER:
-        return 0
-    previous = (
-        Invoice.objects.active()
-        .for_period(period.previous())
-        .filter(contract=contract)
-        .only("next_rollover_minutes")
-        .first()
-    )
-    return previous.next_rollover_minutes if previous else 0
-
-
-def calculate_invoice(*, client: Client, period: MonthPeriod) -> InvoiceCalculation:
-    contract = selectors.contract_for_period(client, period)
-    if contract is None:
-        raise DomainError(
-            f"{client.name} has no contract covering {period}.",
-            code="no_active_contract",
-        )
-    entries = list(
-        selectors.invoiceable_entries(client, period).only("id", "started_at", "ended_at"),
-    )
-    result = strategy_for(contract.to_terms()).calculate(
-        [entry.duration_seconds for entry in entries],
-        rollover_minutes=_rollover_minutes_for(contract, period),
-    )
-    return InvoiceCalculation(
-        contract=contract,
-        result=result,
-        entry_ids=tuple(entry.pk for entry in entries),
-    )
 
 
 def _replaceable_draft(client: Client, period: MonthPeriod) -> Invoice | None:
@@ -159,14 +56,6 @@ def _publish(invoice: Invoice) -> None:
 
 def _release_entries(invoice: Invoice) -> None:
     TimeEntry.objects.filter(invoice=invoice).update(invoice=None)
-
-
-def _lock_period_entries(*, client: Client, period: MonthPeriod) -> None:
-    list(
-        selectors.invoiceable_entries(client, period)
-        .select_for_update(of=("self",))
-        .values_list("pk", flat=True),
-    )
 
 
 def _build_invoice(
@@ -224,8 +113,7 @@ def generate_invoice(
         _release_entries(existing)
         existing.delete()
 
-    _lock_period_entries(client=client, period=period)
-    calculation = calculate_invoice(client=client, period=period)
+    calculation = calculate_invoice(client=client, period=period, for_update=True)
     if calculation.result.is_empty:
         raise DomainError(
             f"There is no billable work for {client.name} in {period}.",

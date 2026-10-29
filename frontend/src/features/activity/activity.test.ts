@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { makeStore } from "@/app/store";
+import { timeEntriesApi } from "@/features/timeEntries/timeEntriesApi";
 import { buildEntry } from "@/test/fixtures";
+import { json, mockFetch, route } from "@/test/render";
 
 import { mergeActiveTimer } from "./activeTimers";
 import { parseActivityEvent } from "./activityEvents";
-import { activitySocketUrl } from "./useActivityStream";
+import { activitySocketUrl } from "./activityConnection";
+import { applyActivityEvent } from "./applyActivityEvent";
 
 describe("parseActivityEvent", () => {
   it("accepts well-formed timer events", () => {
@@ -68,5 +73,35 @@ describe("activitySocketUrl", () => {
     expect(activitySocketUrl("a b", location)).toBe(
       "wss://app.billable.test/ws/activity/?token=a%20b",
     );
+  });
+});
+
+describe("activity cache", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("refreshes the team view when a running entry changes", async () => {
+    const initial = buildEntry({ is_running: true, ended_at: null });
+    const updated = { ...initial, description: "Updated on another device" };
+    let requests = 0;
+    const { fetchMock } = mockFetch(
+      route("GET", "/api/v1/time-entries/active/", () => {
+        requests += 1;
+        return json([requests === 1 ? initial : updated]);
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const store = makeStore({ auth: { accessToken: "access", refreshToken: "refresh" } });
+    const subscription = store.dispatch(timeEntriesApi.endpoints.getActiveTimers.initiate());
+    await subscription;
+
+    store.dispatch(applyActivityEvent({ event: "entry.changed", payload: { entry: updated } }));
+
+    await waitFor(() => {
+      const timers = timeEntriesApi.endpoints.getActiveTimers.select()(store.getState()).data;
+      expect(timers?.[0]?.description).toBe(updated.description);
+    });
+    subscription.unsubscribe();
   });
 });

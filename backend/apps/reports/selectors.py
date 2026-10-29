@@ -7,9 +7,9 @@ from django.db.models.functions import TruncDate
 
 from apps.accounts.models import User
 from apps.billing import selectors as billing_selectors
-from apps.billing import services as billing_services
 from apps.billing.domain.types import BillingModel
 from apps.billing.models import Contract, Invoice, InvoiceStatus
+from apps.billing.services.calculations import calculate_invoice
 from apps.core.money import minutes_to_hours, quantize_money
 from apps.core.periods import MonthPeriod
 from apps.organizations.models import Organization
@@ -279,7 +279,7 @@ def retainer_usage(organization: Organization, period: MonthPeriod) -> list[Reta
                 ),
             )
             continue
-        result = billing_services.calculate_invoice(client=contract.client, period=period).result
+        result = calculate_invoice(client=contract.client, period=period).result
         usages.append(
             _usage(
                 contract=contract,

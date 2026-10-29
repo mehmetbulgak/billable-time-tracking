@@ -56,10 +56,10 @@ export function GenerateInvoiceDialog({ onClose }: { onClose: () => void }) {
     if (preview.isFetching) {
       return <LoadingState minHeight={120} />;
     }
-    if (preview.error || !preview.data) {
+    if (preview.error || !preview.currentData) {
       return <Alert severity="warning">{getErrorMessage(preview.error)}</Alert>;
     }
-    if (preview.data.is_empty) {
+    if (preview.currentData.is_empty) {
       return (
         <Alert severity="info">
           There is no billable work for {client.name} in {periodLabel(period)}.
@@ -68,27 +68,33 @@ export function GenerateInvoiceDialog({ onClose }: { onClose: () => void }) {
     }
     return (
       <Stack spacing={1.5}>
-        {preview.data.replaces_draft === null ? null : (
+        {preview.currentData.replaces_draft === null ? null : (
           <Alert severity="info">
             A draft for this period already exists. Creating a new one replaces it with the figures
             below.
           </Alert>
         )}
         <Typography variant="body2" color="text.secondary">
-          {formatHours(preview.data.billable_hours)} billable after rounding (
-          {formatHours(preview.data.tracked_hours)} tracked)
+          {formatHours(preview.currentData.billable_hours)} billable after rounding (
+          {formatHours(preview.currentData.tracked_hours)} tracked)
         </Typography>
         <InvoiceLinesTable
-          lines={preview.data.lines}
+          lines={preview.currentData.lines}
           currency={client.currency}
-          totals={[{ label: "Subtotal", amount: preview.data.subtotal, emphasize: true }]}
+          totals={[{ label: "Subtotal", amount: preview.currentData.subtotal, emphasize: true }]}
         />
       </Stack>
     );
   };
 
-  const canGenerate = Boolean(preview.data && !preview.data.is_empty && !preview.isFetching);
-  const replacesDraft = typeof preview.data?.replaces_draft === "number";
+  const canGenerate = Boolean(
+    client &&
+    preview.currentData &&
+    !preview.currentData.is_empty &&
+    !preview.error &&
+    !preview.isFetching,
+  );
+  const replacesDraft = typeof preview.currentData?.replaces_draft === "number";
 
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>

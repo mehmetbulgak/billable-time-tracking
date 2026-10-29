@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BillingPreview } from "@/shared/api/types";
 import { buildClient, buildPreview } from "@/test/fixtures";
 import { json, mockFetch, renderWithProviders, route } from "@/test/render";
+import { currentPeriod, periodLabel } from "@/shared/lib/period";
 
 import { GenerateInvoiceDialog } from "./GenerateInvoiceDialog";
 
@@ -55,5 +56,34 @@ describe("GenerateInvoiceDialog", () => {
 
     expect(await screen.findByText(/no billable work for Atlas Fintech/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create draft" })).toBeDisabled();
+  });
+
+  it("disables generation when the selected period fails after a successful preview", async () => {
+    let previews = 0;
+    const { fetchMock } = mockFetch(
+      route("GET", "/api/v1/clients/", () =>
+        json({ count: 1, next: null, previous: null, results: [buildClient()] }),
+      ),
+      route("GET", "/api/v1/invoices/preview/", () => {
+        previews += 1;
+        return previews === 1
+          ? json(buildPreview())
+          : json({ detail: "Preview is temporarily unavailable." }, 503);
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderWithProviders(<GenerateInvoiceDialog onClose={vi.fn()} />, {
+      preloadedState: authenticated,
+    });
+    await user.click(screen.getByLabelText("Client"));
+    await user.click(await screen.findByRole("option", { name: "Atlas Fintech" }));
+    await screen.findByRole("table");
+    await user.click(screen.getByLabelText("Period"));
+    await user.click(screen.getByRole("option", { name: periodLabel(currentPeriod()) }));
+
+    expect(await screen.findByText("Preview is temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create draft" })).toBeDisabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });

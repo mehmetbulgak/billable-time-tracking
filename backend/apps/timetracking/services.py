@@ -58,6 +58,8 @@ def _ensure_trackable(*, user: User, project: Project) -> None:
 
 
 def _ensure_editable(*, entry: TimeEntry, actor: User) -> None:
+    if entry.organization_id != actor.organization_id:
+        raise NotFoundError("Time entry not found.")
     if entry.user_id != actor.pk and not actor.is_manager:
         raise ForbiddenError("You can only change your own time entries.", code="not_entry_owner")
     if entry.is_locked:
@@ -80,6 +82,18 @@ def _ensure_valid_range(*, started_at: datetime, ended_at: datetime | None, now:
 
 def _resolve_billable(project: Project, is_billable: bool | None) -> bool:
     return project.is_billable if is_billable is None else is_billable
+
+
+def _lock_entry(entry: TimeEntry) -> TimeEntry:
+    locked = (
+        TimeEntry.objects.select_for_update(of=("self",))
+        .select_related("project", "project__client", "user")
+        .filter(pk=entry.pk)
+        .first()
+    )
+    if locked is None:
+        raise NotFoundError("Time entry not found.")
+    return locked
 
 
 @transaction.atomic
@@ -177,6 +191,7 @@ def update_entry(
     is_billable: bool | None = None,
     now: datetime | None = None,
 ) -> TimeEntry:
+    entry = _lock_entry(entry)
     _ensure_editable(entry=entry, actor=actor)
     was_running = entry.is_running
 
@@ -205,6 +220,7 @@ def update_entry(
 
 @transaction.atomic
 def delete_entry(*, entry: TimeEntry, actor: User) -> None:
+    entry = _lock_entry(entry)
     _ensure_editable(entry=entry, actor=actor)
     organization_id, entry_id, user_id = entry.organization_id, entry.pk, entry.user_id
     entry.delete()

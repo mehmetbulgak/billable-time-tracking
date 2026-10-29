@@ -1,8 +1,18 @@
 from django.db import transaction
 
 from apps.accounts.models import Role, User
-from apps.core.exceptions import ConflictError, ForbiddenError
+from apps.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from apps.organizations.models import Organization
+
+
+def _lock_actor(*, organization_id: int, actor: User) -> User:
+    Organization.objects.select_for_update().get(pk=organization_id)
+    actor = User.objects.get(pk=actor.pk)
+    if actor.organization_id != organization_id:
+        raise NotFoundError("Organization not found.")
+    if not actor.is_manager:
+        raise ForbiddenError("Only owners and managers can manage members.")
+    return actor
 
 
 def _ensure_can_assign_role(*, actor: User, role: str) -> None:
@@ -34,6 +44,7 @@ def create_member(
     role: str,
     password: str,
 ) -> User:
+    actor = _lock_actor(organization_id=organization.pk, actor=actor)
     _ensure_can_assign_role(actor=actor, role=role)
     if User.objects.filter(email__iexact=email).exists():
         raise ConflictError("A user with this email already exists.", code="email_taken")
@@ -57,6 +68,10 @@ def update_member(
     role: str | None = None,
     is_active: bool | None = None,
 ) -> User:
+    if member.organization_id is None or member.organization_id != actor.organization_id:
+        raise NotFoundError("Member not found.")
+    actor = _lock_actor(organization_id=member.organization_id, actor=actor)
+    member = User.objects.select_for_update().get(pk=member.pk)
     if member.is_owner and not actor.is_owner:
         raise ForbiddenError("Only owners can modify another owner.", code="owner_role_required")
 
