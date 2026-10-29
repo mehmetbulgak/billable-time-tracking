@@ -238,7 +238,10 @@ describe("LoginPage", () => {
     window.localStorage.clear();
   });
 
-  it("signs in with the demo manager account", async () => {
+  it.each([
+    ["Manager", "can@northwind.test"],
+    ["Team member", "elif@northwind.test"],
+  ])("signs in with one click on %s", async (label, email) => {
     const { fetchMock, calls } = mockFetch(
       route("POST", "/api/v1/auth/token/", () =>
         json({ access: "access-token", csrf_token: "csrf" }),
@@ -248,16 +251,44 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     const { store } = renderWithProviders(<LoginPage />, { route: "/login" });
 
-    await user.click(screen.getByRole("button", { name: "Manager" }));
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: label }));
 
     await waitFor(() => {
       expect(store.getState().auth.accessToken).toBe("access-token");
     });
     expect(await calls.find((call) => call.method === "POST")?.json()).toEqual({
-      email: "can@northwind.test",
+      email,
       password: "billable-demo",
     });
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  });
+
+  it("keeps the form intact and prevents overlapping sign-ins while a demo login is pending", async () => {
+    let completeLogin: (response: Response) => void = () => undefined;
+    const loginResponse = new Promise<Response>((resolve) => {
+      completeLogin = resolve;
+    });
+    const fetchMock = vi.fn((request: Request) =>
+      request.method === "GET" ? Promise.resolve(json({ csrf_token: "csrf" })) : loginResponse,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderWithProviders(<LoginPage />, { route: "/login" });
+    await user.type(screen.getByLabelText("Email"), "personal@example.test");
+    await user.type(screen.getByLabelText("Password"), "personal-password");
+
+    await user.click(screen.getByRole("button", { name: "Manager" }));
+
+    expect(screen.getByLabelText("Email")).toHaveValue("personal@example.test");
+    expect(screen.getByLabelText("Password")).toHaveValue("personal-password");
+    expect(screen.getByRole("button", { name: "Manager" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Team member" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+    completeLogin(json({ detail: "Temporarily unavailable" }, 503));
+
+    expect(await screen.findByText("Temporarily unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Team member" })).toBeEnabled();
+    expect(fetchMock.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   });
 
   it("shows the server error for wrong credentials", async () => {

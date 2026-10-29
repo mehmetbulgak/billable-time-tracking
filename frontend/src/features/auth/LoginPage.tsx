@@ -8,7 +8,8 @@ import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useForm } from "react-hook-form";
+import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { z } from "zod";
 
@@ -48,12 +49,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [login, { isLoading, error }] = useLoginMutation();
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<LoginForm>({
+  const [pendingDemoEmail, setPendingDemoEmail] = useState<string | null>(null);
+  const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
@@ -62,17 +59,17 @@ export function LoginPage() {
     return <Navigate to="/" replace />;
   }
 
-  const onSubmit = handleSubmit(async (values) => {
+  const signIn = async (values: LoginForm, demo = false) => {
+    if (isLoading) {
+      return;
+    }
+    setPendingDemoEmail(demo ? values.email : null);
     const result = await login(values);
     if (!("error" in result)) {
       await navigate(redirectTarget(location.state), { replace: true });
     }
-  });
-
-  const fillDemoAccount = (email: string) => {
-    setValue("email", email, { shouldValidate: true });
-    setValue("password", "billable-demo", { shouldValidate: true });
   };
+  const onSubmit = handleSubmit((values) => signIn(values));
 
   return (
     <Box
@@ -96,28 +93,45 @@ export function LoginPage() {
               </Typography>
             </Stack>
             {error ? <Alert severity="error">{getErrorMessage(error)}</Alert> : null}
-            <TextField
-              label="Email"
-              type="email"
-              autoComplete="email"
-              autoFocus
-              error={Boolean(errors.email)}
-              helperText={errors.email?.message}
-              {...register("email")}
+            <Controller
+              name="email"
+              control={control}
+              render={({ field: { ref, ...field }, fieldState }) => (
+                <TextField
+                  {...field}
+                  inputRef={ref}
+                  label="Email"
+                  type="email"
+                  autoComplete="email"
+                  autoFocus
+                  disabled={isLoading}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
             />
-            <TextField
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              error={Boolean(errors.password)}
-              helperText={errors.password?.message}
-              {...register("password")}
+            <Controller
+              name="password"
+              control={control}
+              render={({ field: { ref, ...field }, fieldState }) => (
+                <TextField
+                  {...field}
+                  inputRef={ref}
+                  label="Password"
+                  type="password"
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                  error={Boolean(fieldState.error)}
+                  helperText={fieldState.error?.message}
+                />
+              )}
             />
             <Button
               type="submit"
               variant="contained"
               size="large"
-              loading={isLoading}
+              disabled={isLoading}
+              loading={isLoading && pendingDemoEmail === null}
               startIcon={<LockOutlined />}
             >
               Sign in
@@ -130,11 +144,14 @@ export function LoginPage() {
                 {DEMO_ACCOUNTS.map((account) => (
                   <Button
                     key={account.email}
+                    type="button"
                     variant="outlined"
                     size="small"
                     fullWidth
+                    disabled={isLoading}
+                    loading={isLoading && pendingDemoEmail === account.email}
                     onClick={() => {
-                      fillDemoAccount(account.email);
+                      void signIn({ email: account.email, password: "billable-demo" }, true);
                     }}
                   >
                     {account.label}
