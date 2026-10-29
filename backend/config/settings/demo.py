@@ -16,7 +16,6 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "cache+memory://"
 MAILERS = {"default": {"BACKEND": "django.core.mail.backends.dummy.EmailBackend"}}
-EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
 WHITENOISE_ROOT = BASE_DIR / "frontend_dist"
 
 # Guests share this sample workspace; forwarded addresses identify anonymous limits.
