@@ -24,7 +24,9 @@ describe("demo entry", () => {
       </StrictMode>,
     );
 
-    await waitFor(() => expect(store.getState().auth.accessToken).toBe("demo"));
+    await waitFor(() => {
+      expect(store.getState().auth.accessToken).toBe("demo");
+    });
     expect(calls).toHaveLength(1);
     expect(await calls[0]?.json()).toEqual({
       email: "can@northwind.test",
@@ -45,7 +47,9 @@ describe("demo entry", () => {
     const { store } = renderWithProviders(<DemoSignIn />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(store.getState().auth.accessToken).toBe("demo"));
+    await waitFor(() => {
+      expect(store.getState().auth.accessToken).toBe("demo");
+    });
     expect(attempts).toBe(2);
   });
 });

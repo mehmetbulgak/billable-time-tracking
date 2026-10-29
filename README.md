@@ -6,6 +6,8 @@ Time tracking and invoicing for agencies. Team members track their hours against
 
 ## Public portfolio demo
 
+[Open the live demo](https://billable-time-tracking.onrender.com/)
+
 The Render demo opens directly as the demo manager, with sample clients, contracts,
 timesheets and invoices. Sign out to try the team-member account from the login page.
 
